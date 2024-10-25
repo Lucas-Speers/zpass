@@ -1,5 +1,6 @@
 const std = @import("std");
 const posix = std.posix;
+const windows = std.os.windows;
 const builtin = @import("builtin");
 const debug = std.debug.print;
 const Sha256 = std.crypto.hash.sha2.Sha256;
@@ -12,6 +13,7 @@ const MAX_MASTER_PASSWORD_LEN = 256;
 pub fn main() !void {
     switch (builtin.os.tag) {
         .linux => {},
+        .windows => {},
         else => {
             debug("{any} is currently not supported at the moment\n", .{builtin.os.tag});
             return;
@@ -30,7 +32,7 @@ pub fn main() !void {
     // retry taking user input until a good password if found
     while (true) {
         if (try get_master_password(buf[0..])) |pass| {
-            _ = pass;
+            debug("You typed: {s}\nLength: {d}\n", .{ pass, pass.len });
             // TODO get password hash
         }
     }
@@ -44,6 +46,9 @@ fn get_master_password(buf: []u8) !?[]u8 {
     switch (builtin.os.tag) {
         .linux => {
             return try linux_input(buf[0..]);
+        },
+        .windows => {
+            return try windows_input(buf[0..]);
         },
         else => {
             unreachable;
@@ -71,6 +76,33 @@ fn linux_input(buf: []u8) !?[]u8 {
     try posix.tcsetattr(0, .NOW, original_attrs);
 
     // the enter is not echoed when they finish typing
+    try stdout.print("\n", .{});
+
+    return input;
+}
+
+fn windows_input(buf: []u8) !?[]u8 {
+    const stdin_handle = try windows.GetStdHandle(windows.STD_INPUT_HANDLE);
+    const stdin = std.io.getStdIn().reader();
+    const stdout = std.io.getStdOut().writer();
+
+    var mode: u32 = 0;
+    if (windows.kernel32.GetConsoleMode(stdin_handle, &mode) == 0) {
+        return error.ConsoleModeFailure;
+    }
+
+    const flags: u32 = 0x4 | 0x6;
+    const new_mode: u32 = mode & ~flags;
+    if (windows.kernel32.SetConsoleMode(stdin_handle, new_mode) == 0) {
+        return error.ConsoleModeFailure;
+    }
+
+    const input = try stdin.readUntilDelimiterOrEof(buf[0..], '\r');
+
+    if (windows.kernel32.SetConsoleMode(stdin_handle, mode) == 0) {
+        return error.ConsoleModeFailure;
+    }
+
     try stdout.print("\n", .{});
 
     return input;
