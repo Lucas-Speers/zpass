@@ -38,3 +38,7 @@ pub fn main() !void {
         }
     }
 }
+
+test "read file" {
+    _ = file_format;
+}
